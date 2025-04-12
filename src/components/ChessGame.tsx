@@ -5,8 +5,9 @@ import { Copy } from 'lucide-react';
 import { io, Socket } from 'socket.io-client';
 
 import { GameState, Move } from '../types/chess';
+import useKeycloak from '../hooks/useKeycloak';
 
-const SOCKET_SERVER_URL = 'http://localhost:3000';
+const SOCKET_SERVER_URL = 'http://localhost:3000'; // TODO: to put in .env
 
 export default function ChessGame() {
   const [socket, setSocket] = useState<Socket | null>(null);
@@ -21,15 +22,16 @@ export default function ChessGame() {
     playerColor: null,
     winner: null
   });
+  const { authenticated, initialized, userInfos, keycloak } = useKeycloak();
 
   useEffect(() => {
-    const newSocket = io(SOCKET_SERVER_URL, { withCredentials: true, transports: ['websocket', 'polling'] });
+    const newSocket = io(SOCKET_SERVER_URL, { withCredentials: true, transports: ['websocket', 'polling'], auth: keycloak ?? undefined });
     setSocket(newSocket);
 
     return () => {
       newSocket.close();
     };
-  }, []);
+  }, [keycloak]);
 
   useEffect(() => {
     if (!socket) return;
@@ -44,14 +46,21 @@ export default function ChessGame() {
       }));
     });
 
-    socket.on('playerJoined', ({ id }) => {
+    socket.on('playerJoined', ({ gameId }) => {
       setGameState((prev) => ({
         ...prev,
         status: 'playing',
-        id,
+        id: gameId,
         isPlayerTurn: false,
         playerColor: 'black',
         fen: game.fen()
+      }));
+    });
+
+    socket.on('gameStarted', () => {
+      setGameState((prev) => ({
+        ...prev,
+        isPlayerTurn: true
       }));
     });
 
@@ -101,29 +110,34 @@ export default function ChessGame() {
   }, [socket, game]);
 
   const createNewGame = () => {
+    console.log(socket);
     if (socket) {
-      socket.emit('newGame');
+      console.log('here');
+      socket.emit('newGame', userInfos?.email);
       setGameState((prev) => ({ ...prev, status: 'pending' }));
     }
   };
 
   const joinGame = (e: React.FormEvent) => {
     e.preventDefault();
-    if (socket && inputGameId.trim()) {
-      socket.emit('joinGame', inputGameId.trim());
-      setGameState((prev) => ({ ...prev, status: 'pending' }));
+    const gameId = inputGameId.trim();
+    if (socket && gameId) {
+      socket.emit('joinGame', { gameId, email: userInfos?.email });
+      setGameState((prev) => ({ ...prev, status: 'pending', id: gameId }));
     }
   };
 
   const makeMove = useCallback(
     (move: Move) => {
+      console.log('test', socket, gameState.isPlayerTurn);
       if (socket && gameState.isPlayerTurn) {
         try {
           const result = game.move(move);
           if (result) {
             socket.emit('makeMove', {
               gameId: gameState.id,
-              move: move
+              move: move,
+              email: userInfos?.email
             });
             setGameState((prev) => ({
               ...prev,
@@ -138,7 +152,7 @@ export default function ChessGame() {
       }
       return false;
     },
-    [socket, game, gameState.id, gameState.isPlayerTurn]
+    [socket, game, gameState.id, gameState.isPlayerTurn, userInfos?.email]
   );
 
   const onDrop = (sourceSquare: string, targetSquare: string) => {
@@ -155,6 +169,7 @@ export default function ChessGame() {
   };
 
   const resetGame = () => {
+    game.reset();
     setGameState({
       id: null,
       fen: game.fen(),
@@ -168,7 +183,9 @@ export default function ChessGame() {
     game.reset();
   };
 
-  return (
+  return !authenticated && initialized ? (
+    <span> Please authenticate</span>
+  ) : (
     <div className='min-h-screen bg-gray-100 flex items-center justify-center p-4'>
       <div className='bg-white p-8 rounded-lg shadow-xl max-w-3xl w-full'>
         <div className='mb-6'>
@@ -209,7 +226,7 @@ export default function ChessGame() {
           <Chessboard position={gameState.fen} onPieceDrop={onDrop} boardOrientation={gameState.playerColor || 'white'} />
         </div>
         <div className='mt-4 text-center'>
-          {gameState.status === 'pending' && gameState.id && <p className='text-lg text-blue-600'>pending for opponent to join...</p>}
+          {gameState.status === 'pending' && gameState.id && <p className='text-lg text-blue-600'>Waiting for opponent to join...</p>}
           {gameState.status === 'playing' && <p className='text-lg'>{gameState.isPlayerTurn ? "It's your turn" : "Waiting for opponent's to play"}</p>}
           {gameState.status === 'checkmate' && <p className='text-xl font-bold'>Game Over! {`${gameState.winner} wins!`}</p>}
           {gameState.status === 'draw' && <p className='text-xl font-bold'>Game Over! {`It's a draw`}</p>}
