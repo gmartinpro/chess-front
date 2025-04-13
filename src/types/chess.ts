@@ -5,7 +5,7 @@ export interface GameState {
   fen: string; // Forsyth-Edwards Notation => État de l'échiquier
   playerColor: 'white' | 'black' | null;
   isPlayerTurn: boolean;
-  winner: null;
+  winner?: { currentSocketId: string; elo: number; email: string; gamertag: string } | null;
 }
 export type GameStatus = 'playing' | 'checkmate' | 'stalemate' | 'draw' | 'resign' | 'pending';
 
