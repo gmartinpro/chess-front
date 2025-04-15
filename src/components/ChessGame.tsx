@@ -9,7 +9,7 @@ import useKeycloak from '../hooks/useKeycloak';
 import { Toaster } from 'react-hot-toast';
 import { useError } from '../hooks/useError';
 
-const SOCKET_SERVER_URL = 'http://localhost:3000'; // TODO: to put in .env
+const SOCKET_SERVER_URL = import.meta.env.VITE_API_URL || 'ws://localhost:3000';
 
 export default function ChessGame() {
   const [socket, setSocket] = useState<Socket | null>(null);
@@ -28,8 +28,9 @@ export default function ChessGame() {
   const { authenticated, initialized, userInfos, keycloak } = useKeycloak();
 
   useEffect(() => {
-    const newSocket = io(SOCKET_SERVER_URL, { withCredentials: true, transports: ['websocket', 'polling'], auth: keycloak ?? undefined });
+    const newSocket = io(SOCKET_SERVER_URL, { withCredentials: true, transports: ['websocket'], auth: keycloak ?? undefined });
     setSocket(newSocket);
+    console.log(newSocket);
 
     return () => {
       newSocket.close();
@@ -120,12 +121,10 @@ export default function ChessGame() {
       socket.off('illegalMove');
       socket.off('connect_error');
     };
-  }, [socket, game, handleError]);
+  }, [socket, game]);
 
   const createNewGame = () => {
-    console.log(socket);
     if (socket) {
-      console.log('here');
       socket.emit('newGame', userInfos?.email);
       setGameState((prev) => ({ ...prev, status: 'pending' }));
     }
@@ -142,7 +141,6 @@ export default function ChessGame() {
 
   const makeMove = useCallback(
     (move: Move) => {
-      console.log('test', socket, gameState.isPlayerTurn);
       if (socket && gameState.isPlayerTurn) {
         try {
           const result = game.move(move);
